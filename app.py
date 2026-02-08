@@ -3,37 +3,42 @@ import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="Venture Miner V2", layout="wide")
-st.title("⛏️ Venture Mining Screener V2")
+st.title("⛏️ Venture Mining Scout V2")
 
-# Sidebar for Ticker Input
-ticker = st.sidebar.text_input("Enter TSX.V Ticker:", value="FUU.V").upper()
+ticker = st.sidebar.text_input("Enter Ticker (e.g. FUU.V):", value="FUU.V").upper()
 
 if st.sidebar.button("Run Screener"):
-    try:
-        # Pull Live Data
+    # Clear previous errors
+    st.empty()
+    
+    with st.spinner(f'Fetching live data for {ticker}...'):
         data = yf.Ticker(ticker)
-        info = data.info
         
-        # Display Metrics
-        st.header(f"Results for {ticker}")
-        c1, c2, c3 = st.columns(3)
+        # 1. Try to get Price History first (most reliable)
+        hist = data.history(period="1y")
         
-        shares = info.get('sharesOutstanding', 0)
-        cash = info.get('totalCash', 0)
-        
-        c1.metric("Shares Outstanding", f"{shares/1e6:.1f}M" if shares else "N/A")
-        c2.metric("Cash (Est)", f"${cash/1e6:.1f}M" if cash else "N/A")
-        c3.metric("Current Price", f"${info.get('currentPrice', 'N/A')}")
-        
-        # Screener Logic
-        st.subheader("📋 Screener Checklist")
-        if shares and shares < 100000000:
-            st.success("✅ Tight Cap Structure (<100M shares)")
+        if hist.empty:
+            st.error(f"❌ No data found for {ticker}. Check the ticker suffix (use .V for Venture).")
         else:
-            st.warning("⚠️ High Share Count (>100M shares)")
+            # 2. Get Info (Fragile)
+            info = data.info
             
-        # Price Chart
-        st.line_chart(data.history(period="1y")['Close'])
-        
-    except Exception as e:
-        st.error(f"Could not find {ticker}. Did you forget the '.V'?")
+            # Display Metrics with "Fallback" values
+            c1, c2, c3 = st.columns(3)
+            
+            price = info.get('currentPrice') or (hist['Close'].iloc[-1] if not hist.empty else 0)
+            shares = info.get('sharesOutstanding', 0)
+            cash = info.get('totalCash', 0)
+            
+            c1.metric("Shares Outstanding", f"{shares/1e6:.1f}M" if shares else "Data Pending")
+            c2.metric("Cash (Est)", f"${cash/1e6:.1f}M" if cash else "Data Pending")
+            c3.metric("Current Price", f"${price:.3f}")
+            
+            # 3. Apply Screener
+            st.subheader("📋 Quick-Score Analysis")
+            if shares and shares < 100000000:
+                st.success("✅ Tight Cap Structure")
+            else:
+                st.info("ℹ️ Share structure data currently unavailable or count high.")
+                
+            st.line_chart(hist['Close'])
